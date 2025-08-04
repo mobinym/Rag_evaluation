@@ -1,0 +1,15 @@
+# rag_evaluation/requirements.txt
+ragas==0.1.7
+pandas
+datasets
+langchain-core
+langchain-community
+langchain-ollama
+langchain-chroma
+langchain-huggingface
+sentence-transformers
+requests
+pyyaml
+seaborn
+matplotlib
+unstructured
