@@ -13,7 +13,7 @@ from ragas.metrics import (
     AnswerRelevancy,
     ContextRecall,
     ContextPrecision,
-    ContextRelevance, # ✅ نام صحیح برای نسخه 0.1.7
+    ContextRelevance, 
 )
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
@@ -26,9 +26,11 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
-
-
-
+from ragas.metrics.base import Metric
+from datasets import Dataset
+import numpy as np
+from typing import List
+from ragas.embeddings.base import BaseRagasEmbeddings  
 
 class CustomOllama(OllamaLLM):
     """
@@ -36,19 +38,51 @@ class CustomOllama(OllamaLLM):
     from kwargs before making the request, to support older servers.
     """
     def _create_generate_stream(self, prompt: str, stop: list[str] | None = None, **kwargs: Any):
-        # قبل از ارسال درخواست، پارامتر دما را از آن حذف کن
         kwargs.pop("temperature", None)
-        # حالا متد اصلی کلاس پدر را با پارامترهای اصلاح شده فراخوانی کن
         return super()._create_generate_stream(prompt, stop, **kwargs)
+    
+class DirectAnswerRelevancy(Metric):
+    """
+    Calculates the direct cosine similarity between the question and the answer embeddings.
+    This metric does not use an LLM and relies solely on the embedding model.
+    It's adapted for the new Ragas API.
+    """
+    name: str = "direct_answer_relevancy"
+    _required_columns: List[str] = ["question", "answer"]
+    embeddings: BaseRagasEmbeddings
 
+    def init(self):
+        """
+        This method is called by Ragas to initialize the metric's dependencies.
+        """
+        super().init()
 
+    def _score_batch(self, dataset: Dataset) -> List[float]:
+        questions = dataset["question"]
+        answers = dataset["answer"]
 
-# --- ۱. بارگذاری تنظیمات ---
+        q_embeddings = self.embeddings.embed_documents(questions)
+        a_embeddings = self.embeddings.embed_documents(answers)
+
+        scores = []
+        for q_emb, a_emb in zip(q_embeddings, a_embeddings):
+            q_emb = np.array(q_emb)
+            a_emb = np.array(a_emb)
+            
+            if np.linalg.norm(q_emb) == 0 or np.linalg.norm(a_emb) == 0:
+                scores.append(0.0)
+                continue
+
+            similarity = np.dot(q_emb, a_emb) / (np.linalg.norm(q_emb) * np.linalg.norm(a_emb))
+            scores.append(float(similarity))
+            
+        return scores
+
 def load_config(config_path: str = "config.yml") -> Dict[str, Any]:
     with open(config_path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
-# --- ۲. کلاینت سرویس RAG ---
+
 class RAGServiceClient:
     def __init__(self, config: Dict[str, Any]):
         print("در حال آماده‌سازی کلاینت سرویس RAG...")
@@ -98,18 +132,22 @@ class RAGServiceClient:
             except requests.RequestException as e:
                 print(f"هشدار: پاک‌سازی VS با خطا مواجه شد. خطا: {e}")
 
-# --- ۳. منطق ارزیابی ---
-# این کد را جایگزین کل تابع run_evaluation خود کنید
+
 
 def run_evaluation(config: Dict[str, Any]):
     rag_client = RAGServiceClient(config)
     
     try:
         df = pd.read_csv(config['qa_dataset_path'], delimiter=",")
+        if 'reference' in df.columns:
+            df.rename(columns={'reference': 'ground_truth'}, inplace=True)
+        
+        original_df = df.copy()
+
         questions = df["question"].tolist()
         ground_truths = df["ground_truth"].tolist()
 
-        print("در حال تولید پاسخ‌ها از سرویس RAG برای مجموعه داده ارزیابی...")
+        print("در حال تولید پاسخ‌ها از سرویس RAG...")
         answers = []
         contexts = []
         for q in questions:
@@ -118,15 +156,14 @@ def run_evaluation(config: Dict[str, Any]):
             retrieved_contexts = [chunk['content'] for ref in response_json.get('references', []) for chunk in ref.get('chunks', [])]
             contexts.append(retrieved_contexts)
             print(f"سوال پردازش شد: {q[:50]}...")
+        
+        original_df["answer"] = answers
+        original_df["contexts"] = contexts
 
-        dataset = Dataset.from_dict({
-            "question": questions, "answer": answers,
-            "contexts": contexts, "ground_truth": ground_truths
-        })
+        dataset = Dataset.from_pandas(original_df)
 
         ragas_config = config['ragas']
         
-        # ✅ تغییر اول: اضافه کردن temperature=None برای سازگاری با سرور شما
         ragas_llm = LangchainLLMWrapper(
             CustomOllama(
                 model=ragas_config['llm_model'],
@@ -134,44 +171,72 @@ def run_evaluation(config: Dict[str, Any]):
                 timeout=600
             )
         )
-
-        # این متغیر اینجا تعریف می‌شود
+        
         ragas_embeddings = LangchainEmbeddingsWrapper(HuggingFaceEmbeddings(model_name=ragas_config['embedding_model']))
 
         faithfulness = Faithfulness(llm=ragas_llm)
-        # و اینجا در متریک استفاده می‌شود
-        answer_relevancy = AnswerRelevancy(llm=ragas_llm, embeddings=ragas_embeddings)
         context_recall = ContextRecall(llm=ragas_llm)
         context_precision = ContextPrecision(llm=ragas_llm)
-        context_relevancy = ContextRelevance(llm=ragas_llm)
-
+        context_relevance = ContextRelevance(llm=ragas_llm)
+        
         metrics = [
-            context_relevancy, context_precision,
-            faithfulness, answer_relevancy, context_recall,
+            context_relevance,
+            context_precision,
+            faithfulness,
+            context_recall,
         ]
 
-        print("در حال شروع ارزیابی Ragas...")
+        print("در حال شروع ارزیابی Ragas (فقط متریک‌های استاندارد)...")
         
-        # ✅ تغییر دوم: معرفی کردن embeddings به تابع اصلی evaluate
-        # و مطمئن شوید که نام متغیر ragas_embeddings اینجا درست تایپ شده
         result = evaluate(
             dataset=dataset,
             metrics=metrics,
             embeddings=ragas_embeddings
         )
         
-        print("ارزیابی به پایان رسید.")
-        return result
+        print("ارزیابی Ragas به پایان رسید.")
+        
+        ragas_scores_df = result.to_pandas()
+        original_df = original_df.drop(columns=[m.name for m in metrics if m.name in original_df.columns], errors='ignore')
+        final_df = pd.concat([original_df, ragas_scores_df], axis=1)
+
+        return final_df, ragas_embeddings
 
     finally:
         rag_client.cleanup()
 
-# --- ۴. بصری‌سازی ---
-def visualize_results(result_dataset: Dataset):
+
+def calculate_direct_relevancy(results_df: pd.DataFrame, embeddings: LangchainEmbeddingsWrapper) -> pd.DataFrame:
+    """محاسبه دستی امتیاز شباهت مستقیم سوال و پاسخ و اضافه کردن آن به دیتافریم نتایج."""
+    questions = results_df["question"].tolist()
+    answers = results_df["answer"].tolist()
+    
+    q_embeddings = embeddings.embed_documents(questions)
+    a_embeddings = embeddings.embed_documents(answers)
+    
+    scores = []
+    for q_emb, a_emb in zip(q_embeddings, a_embeddings):
+        q_emb = np.array(q_emb)
+        a_emb = np.array(a_emb)
+        
+        if np.linalg.norm(q_emb) == 0 or np.linalg.norm(a_emb) == 0:
+            scores.append(0.0)
+            continue
+            
+        similarity = np.dot(q_emb, a_emb) / (np.linalg.norm(q_emb) * np.linalg.norm(a_emb))
+        scores.append(float(similarity))
+        
+    results_df["direct_answer_relevancy"] = scores
+    return results_df
+
+from matplotlib.colors import LinearSegmentedColormap
+def visualize_results(result_df: pd.DataFrame): 
     import seaborn as sns
     import matplotlib.pyplot as plt
-    
-    df = result_dataset.to_pandas()
+    cmap = LinearSegmentedColormap.from_list(
+    "green_red", ["#E74C3C", "#2ECC71"] 
+)
+    df = result_df
     metric_columns = df.select_dtypes(include=np.number).columns.tolist()
     
     question_col = 'question' if 'question' in df.columns else None
@@ -179,7 +244,7 @@ def visualize_results(result_dataset: Dataset):
     plt.figure(figsize=(10, len(df) * 0.6))
     sns.heatmap(
         df[metric_columns].astype(float),
-        annot=True, fmt=".2f", linewidths=.5, cmap="coolwarm",
+        annot=True, fmt=".2f", linewidths=.5, cmap=cmap,
         yticklabels=df[question_col].str.slice(0, 40) if question_col else False
     )
     plt.xticks(rotation=45, ha="right")
@@ -189,14 +254,24 @@ def visualize_results(result_dataset: Dataset):
     plt.tight_layout()
     plt.show()
 
-# --- اجرای اصلی ---
+
 if __name__ == "__main__":
     config = load_config()
-    evaluation_result = run_evaluation(config)
     
-    print("\n--- نتایج ارزیابی ---")
-    df_results = evaluation_result.to_pandas()
-    print(df_results)
+    df_with_ragas_scores, ragas_embeddings = run_evaluation(config)
+    
+    print("\nدر حال محاسبه امتیاز Direct Answer Relevancy...")
+    final_df_with_all_scores = calculate_direct_relevancy(df_with_ragas_scores, ragas_embeddings)
+    
+    print("\n--- نتایج نهایی ارزیابی (با متریک سفارشی) ---")
+    print(final_df_with_all_scores)
+
+    output_path = "rag_evaluation_results.csv"
+    try:
+        final_df_with_all_scores.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"\n✅ نتایج با موفقیت در فایل '{output_path}' ذخیره شد.")
+    except Exception as e:
+        print(f"\n❌ خطا در ذخیره‌سازی فایل CSV: {e}")
     
     print("\nدر حال بصری‌سازی نتایج...")
-    visualize_results(evaluation_result)
+    visualize_results(final_df_with_all_scores)

@@ -1,24 +1,16 @@
 # rag_evaluation/config.yml
 
-# --- مسیر فایل‌ها ---
-# ✅ مسیر سند اصلی که باید به سرویس RAG شما ارسال شود
 source_document_path: "./data" 
 qa_dataset_path: "./data/qa.csv"
 
-# --- تنظیمات سرور RAG شما ---
 server:
-  base_url: "http://localhost:8000" # آدرس سرویس RAG اصلی شما
-  # ✅ این اندپوینت‌ها با سرویس شما مطابقت داده شده‌اند
+  base_url: "http://localhost:8000"
   create_empty_vs_endpoint: "/v1/rag/vs/empty"
   add_document_endpoint: "/v1/rag/vs/{vs_id}/documents"
   ask_endpoint: "/v1/rag/vs/{vs_id}/chat"
   delete_vs_endpoint: "/v1/rag/vs/{vs_id}"
 
-# --- تنظیمات Ragas (برای خود فرآیند ارزیابی) ---
 ragas:
-  # مدلی که Ragas برای قضاوت استفاده می‌کند (می‌تواند سبک باشد)
   llm_model: "gemma3:4b" 
-  # مدل امبدینگ برای متریک‌های Ragas
-  embedding_model: "BAAI/bge-m3"
-  # آدرس سرور Ollama برای Ragas
+  embedding_model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
   ollama_base_url: "http://services.aiopt.io:11434"
