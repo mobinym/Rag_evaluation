@@ -133,78 +133,36 @@ class RAGServiceClient:
                 print(f"هشدار: پاک‌سازی VS با خطا مواجه شد. خطا: {e}")
 
 
-
 def run_evaluation(config: Dict[str, Any]):
+    # ... (این تابع تقریباً بدون تغییر باقی می‌ماند و فقط print های آن بهتر می‌شود) ...
     rag_client = RAGServiceClient(config)
-    
     try:
         df = pd.read_csv(config['qa_dataset_path'], delimiter=",")
         if 'reference' in df.columns:
             df.rename(columns={'reference': 'ground_truth'}, inplace=True)
-        
         original_df = df.copy()
-
-        questions = df["question"].tolist()
-        ground_truths = df["ground_truth"].tolist()
-
-        print("در حال تولید پاسخ‌ها از سرویس RAG...")
-        answers = []
-        contexts = []
+        questions, ground_truths = df["question"].tolist(), df["ground_truth"].tolist()
+        print("[INFO] در حال تولید پاسخ‌ها از سرویس RAG...")
+        answers, contexts = [], []
         for q in questions:
             response_json = rag_client.ask(q)
             answers.append(response_json['answer'])
             retrieved_contexts = [chunk['content'] for ref in response_json.get('references', []) for chunk in ref.get('chunks', [])]
             contexts.append(retrieved_contexts)
-            print(f"سوال پردازش شد: {q[:50]}...")
-        
-        original_df["answer"] = answers
-        original_df["contexts"] = contexts
-
+        original_df["answer"], original_df["contexts"] = answers, contexts
         dataset = Dataset.from_pandas(original_df)
-
         ragas_config = config['ragas']
-        
-        ragas_llm = LangchainLLMWrapper(
-            CustomOllama(
-                model=ragas_config['llm_model'],
-                base_url=ragas_config['ollama_base_url'],
-                timeout=600
-            )
-        )
-        
+        ragas_llm = LangchainLLMWrapper(CustomOllama(model=ragas_config['llm_model'], base_url=ragas_config['ollama_base_url'], timeout=600))
         ragas_embeddings = LangchainEmbeddingsWrapper(HuggingFaceEmbeddings(model_name=ragas_config['embedding_model']))
-
-        faithfulness = Faithfulness(llm=ragas_llm)
-        context_recall = ContextRecall(llm=ragas_llm)
-        context_precision = ContextPrecision(llm=ragas_llm)
-        context_relevance = ContextRelevance(llm=ragas_llm)
-        
-        metrics = [
-            context_relevance,
-            context_precision,
-            faithfulness,
-            context_recall,
-        ]
-
-        print("در حال شروع ارزیابی Ragas (فقط متریک‌های استاندارد)...")
-        
-        result = evaluate(
-            dataset=dataset,
-            metrics=metrics,
-            embeddings=ragas_embeddings
-        )
-        
-        print("ارزیابی Ragas به پایان رسید.")
-        
+        metrics = [ContextRelevance(llm=ragas_llm), ContextPrecision(llm=ragas_llm), Faithfulness(llm=ragas_llm), ContextRecall(llm=ragas_llm)]
+        print("[INFO] در حال شروع ارزیابی Ragas (فقط متریک‌های استاندارد)...")
+        result = evaluate(dataset=dataset, metrics=metrics, embeddings=ragas_embeddings)
+        print("[INFO] ارزیابی Ragas به پایان رسید.")
         ragas_scores_df = result.to_pandas()
-        original_df = original_df.drop(columns=[m.name for m in metrics if m.name in original_df.columns], errors='ignore')
-        final_df = pd.concat([original_df, ragas_scores_df], axis=1)
-
+        final_df = pd.concat([original_df.reset_index(drop=True), ragas_scores_df.reset_index(drop=True)], axis=1)
         return final_df, ragas_embeddings
-
     finally:
         rag_client.cleanup()
-
 
 def calculate_direct_relevancy(results_df: pd.DataFrame, embeddings: LangchainEmbeddingsWrapper) -> pd.DataFrame:
     """محاسبه دستی امتیاز شباهت مستقیم سوال و پاسخ و اضافه کردن آن به دیتافریم نتایج."""
@@ -229,49 +187,125 @@ def calculate_direct_relevancy(results_df: pd.DataFrame, embeddings: LangchainEm
     results_df["direct_answer_relevancy"] = scores
     return results_df
 
+# # ✅ تابع جدید برای محاسبه امتیاز کلی
+# def calculate_overall_score(df: pd.DataFrame) -> float:
+#     """محاسبه یک امتیاز کلی بر اساس میانگین متریک‌های کلیدی."""
+#     # ما متریک‌های کلیدی را اینجا تعریف می‌کنیم
+#     key_metrics = ['context_precision', 'faithfulness', 'context_recall', 'direct_answer_relevancy']
+    
+#     # فقط متریک‌هایی که در دیتافریم وجود دارند را در نظر می‌گیریم
+#     existing_key_metrics = [m for m in key_metrics if m in df.columns]
+#     print(f"[INFO] متریک‌های کلیدی برای محاسبه امتیاز نهایی: {existing_key_metrics}")
+    
+#     # میانگین هر ستون را محاسبه کرده و مقادیر NaN را نادیده می‌گیریم
+#     metric_averages = df[existing_key_metrics].mean(numeric_only=True, skipna=True)
+    
+#     # میانگین این میانگین‌ها را به عنوان امتیاز کلی برمی‌گردانیم
+#     overall_score = metric_averages.mean()
+    
+#     return overall_score
+def calculate_overall_score(df: pd.DataFrame) -> float:
+    """محاسبه یک امتیاز کلی بر اساس میانگین وزنی متریک‌های کلیدی."""
+    
+    # ✅ وزن‌ها را بر اساس اهمیت هر متریک برای خودتان تعریف کنید
+    weights = {
+        'faithfulness': 3.0,              # بیشترین اهمیت
+        'direct_answer_relevancy': 2.0,   # اهمیت بالا
+        'context_recall': 1.5,            # اهمیت متوسط
+        'context_precision': 1.0          # اهمیت عادی
+    }
+    
+    existing_key_metrics = [m for m in weights.keys() if m in df.columns]
+    print(f"[INFO] متریک‌های کلیدی برای محاسبه امتیاز نهایی: {existing_key_metrics}")
+
+    # فقط وزن‌های متریک‌های موجود را در نظر بگیر
+    active_weights = {k: v for k, v in weights.items() if k in existing_key_metrics}
+    
+    metric_averages = df[existing_key_metrics].mean(skipna=True)
+    
+    # محاسبه میانگین وزنی
+    weighted_sum = (metric_averages * pd.Series(active_weights)).sum()
+    total_weight = sum(active_weights.values())
+    
+    if total_weight == 0:
+        return 0.0
+        
+    overall_score = weighted_sum / total_weight
+    
+    return overall_score
+
 from matplotlib.colors import LinearSegmentedColormap
-def visualize_results(result_df: pd.DataFrame): 
-    import seaborn as sns
-    import matplotlib.pyplot as plt
-    cmap = LinearSegmentedColormap.from_list(
-    "green_red", ["#E74C3C", "#2ECC71"] 
-)
-    df = result_df
-    metric_columns = df.select_dtypes(include=np.number).columns.tolist()
+import seaborn as sns
+import matplotlib.pyplot as plt
+def save_heatmap(result_df: pd.DataFrame, output_path: str):
+    print(f"[INFO] در حال ذخیره نمودار هیت‌مپ در {output_path}...")
+    metric_columns = result_df.select_dtypes(include=np.number).columns.tolist()
+    question_col = 'question' if 'question' in result_df.columns else None
     
-    question_col = 'question' if 'question' in df.columns else None
-    
-    plt.figure(figsize=(10, len(df) * 0.6))
+    plt.figure(figsize=(12, len(result_df) * 0.6))
     sns.heatmap(
-        df[metric_columns].astype(float),
-        annot=True, fmt=".2f", linewidths=.5, cmap=cmap,
-        yticklabels=df[question_col].str.slice(0, 40) if question_col else False
+        result_df[metric_columns].astype(float),
+        annot=True, fmt=".2f", linewidths=.5, cmap="coolwarm",
+        yticklabels=result_df[question_col].str.slice(0, 50) if question_col else False
     )
     plt.xticks(rotation=45, ha="right")
     if question_col:
         plt.yticks(rotation=0)
     plt.title("RAG Evaluation Metrics Heatmap")
     plt.tight_layout()
-    plt.show()
+    plt.savefig(output_path, bbox_inches='tight')
+    plt.close() # بستن نمودار برای جلوگیری از نمایش در محیط‌های غیرگرافیکی
+    print("[INFO] نمودار با موفقیت ذخیره شد.")
 
+
+import sys
+def main():
+    """تابع اصلی برای اجرای کل فرآیند ارزیابی."""
+    try:
+        # ۱. بارگذاری تنظیمات و آماده‌سازی
+        config = load_config()
+        ci_config = config.get('ci_cd', {})
+        artifacts_dir = ci_config.get('artifacts_dir', 'evaluation_artifacts')
+        pass_threshold = ci_config.get('pass_threshold', 0.75)
+
+        os.makedirs(artifacts_dir, exist_ok=True)
+        csv_path = os.path.join(artifacts_dir, "rag_evaluation_results.csv")
+        heatmap_path = os.path.join(artifacts_dir, "rag_evaluation_heatmap.png")
+
+        # ۲. اجرای ارزیابی
+        df_ragas, embeddings = run_evaluation(config)
+        
+        # ۳. محاسبه متریک سفارشی
+        print("[INFO] در حال محاسبه امتیاز Direct Answer Relevancy...")
+        df_final = calculate_direct_relevancy(df_ragas, embeddings)
+        
+        print("\n--- نتایج نهایی ارزیابی ---")
+        print(df_final)
+
+        # ۴. ذخیره نتایج (آرتیفکت‌ها)
+        df_final.to_csv(csv_path, index=False, encoding='utf-8-sig')
+        print(f"\n[INFO] نتایج کامل با موفقیت در فایل '{csv_path}' ذخیره شد.")
+        save_heatmap(df_final, heatmap_path)
+
+        # ۵. محاسبه امتیاز کلی و بررسی آستانه
+        print("\n" + "="*50)
+        print("[CI/CD] در حال بررسی نتایج برای قبولی...")
+        overall_score = calculate_overall_score(df_final)
+        print(f"[RESULT] امتیاز کلی محاسبه شده: {overall_score:.4f}")
+        print(f"[CONFIG] آستانه قبولی تنظیم شده: {pass_threshold:.4f}")
+
+        if overall_score >= pass_threshold:
+            print("\n[CI/CD CHECK PASSED] ✔️ امتیاز کلی بالاتر از آستانه است. بیلد موفقیت‌آمیز بود.")
+            sys.exit(0) # خروج با کد ۰ به معنی موفقیت
+        else:
+            print(f"\n[CI/CD CHECK FAILED] ❌ امتیاز کلی ({overall_score:.4f}) پایین‌تر از آستانه ({pass_threshold:.4f}) است. بیلد ناموفق بود.")
+            sys.exit(1) # خروج با کد ۱ به معنی شکست
+
+    except Exception as e:
+        print(f"\n[FATAL ERROR] یک خطای پیش‌بینی‌نشده در حین اجرای اسکریپت رخ داد: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1) # خروج با کد ۱ به معنی شکست
 
 if __name__ == "__main__":
-    config = load_config()
-    
-    df_with_ragas_scores, ragas_embeddings = run_evaluation(config)
-    
-    print("\nدر حال محاسبه امتیاز Direct Answer Relevancy...")
-    final_df_with_all_scores = calculate_direct_relevancy(df_with_ragas_scores, ragas_embeddings)
-    
-    print("\n--- نتایج نهایی ارزیابی (با متریک سفارشی) ---")
-    print(final_df_with_all_scores)
-
-    output_path = "rag_evaluation_results.csv"
-    try:
-        final_df_with_all_scores.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"\n✅ نتایج با موفقیت در فایل '{output_path}' ذخیره شد.")
-    except Exception as e:
-        print(f"\n❌ خطا در ذخیره‌سازی فایل CSV: {e}")
-    
-    print("\nدر حال بصری‌سازی نتایج...")
-    visualize_results(final_df_with_all_scores)
+    main()
