@@ -287,7 +287,24 @@ def main():
         print(f"\n[INFO] نتایج کامل با موفقیت در فایل '{csv_path}' ذخیره شد.")
         save_heatmap(df_final, heatmap_path)
 
-        # ۵. محاسبه امتیاز کلی و بررسی آستانه
+        # --- بلوک ساخت فایل مقایسه دستی (با try...except مخصوص به خود) ---
+        try:
+            print("[INFO] در حال ایجاد فایل CSV برای بررسی دستی...")
+            comparison_df = df_final[['question', 'answer', 'ground_truth']]
+            comparison_df = comparison_df.rename(columns={
+                'question': 'سوال پرسیده شده',
+                'answer': 'پاسخ RAG',
+                'ground_truth': 'پاسخ مورد انتظار'
+            })
+            comparison_path = os.path.join(artifacts_dir, "manual_review.csv")
+            comparison_df.to_csv(comparison_path, index=False, encoding='utf-8-sig')
+            print(f"[INFO] فایل بررسی دستی با موفقیت در '{comparison_path}' ذخیره شد.")
+        except Exception as e:
+            # اگر در این بخش خطایی رخ دهد، فقط یک هشدار چاپ می‌کنیم و ادامه می‌دهیم
+            print(f"[WARNING] خطا در ایجاد فایل بررسی دستی: {e}")
+        # -----------------------------------------------------------------
+
+        # ✅ ۵. محاسبه امتیاز کلی و بررسی آستانه (حالا در جای درست قرار دارد)
         print("\n" + "="*50)
         print("[CI/CD] در حال بررسی نتایج برای قبولی...")
         overall_score = calculate_overall_score(df_final)
@@ -296,7 +313,7 @@ def main():
 
         if overall_score >= pass_threshold:
             print("\n[CI/CD CHECK PASSED] ✔️ امتیاز کلی بالاتر از آستانه است. بیلد موفقیت‌آمیز بود.")
-            sys.exit(0) # خروج با کد ۰ به معنی موفقیت
+            # sys.exit(0) # در اجرای دستی می‌توانید این خط را کامنت کنید تا برنامه بسته نشود
         else:
             print(f"\n[CI/CD CHECK FAILED] ❌ امتیاز کلی ({overall_score:.4f}) پایین‌تر از آستانه ({pass_threshold:.4f}) است. بیلد ناموفق بود.")
             sys.exit(1) # خروج با کد ۱ به معنی شکست
