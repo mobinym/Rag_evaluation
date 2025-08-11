@@ -1,11 +1,11 @@
 # rag_evaluation/requirements.txt
-ragas==0.1.7
+ragas==0.1.21
 pandas
 datasets
 langchain-core
 langchain-community
 langchain-ollama
-langchain-chroma
+# langchain-chroma
 langchain-huggingface
 sentence-transformers
 requests

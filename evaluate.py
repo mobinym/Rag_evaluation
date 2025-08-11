@@ -20,12 +20,12 @@ from ragas.embeddings import LangchainEmbeddingsWrapper
 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import OllamaLLM
-from langchain_community.document_loaders import DirectoryLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
-from langchain_core.prompts import PromptTemplate
-from langchain.schema.runnable import RunnablePassthrough
-from langchain.schema.output_parser import StrOutputParser
+# from langchain_community.document_loaders import DirectoryLoader
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from langchain_chroma import Chroma
+# from langchain_core.prompts import PromptTemplate
+# from langchain.schema.runnable import RunnablePassthrough
+# from langchain.schema.output_parser import StrOutputParser
 from ragas.metrics.base import Metric
 from datasets import Dataset
 import numpy as np
@@ -237,25 +237,61 @@ def calculate_overall_score(df: pd.DataFrame) -> float:
 from matplotlib.colors import LinearSegmentedColormap
 import seaborn as sns
 import matplotlib.pyplot as plt
+import arabic_reshaper
+from bidi.algorithm import get_display
+from matplotlib.font_manager import FontProperties
+
 def save_heatmap(result_df: pd.DataFrame, output_path: str):
     print(f"[INFO] در حال ذخیره نمودار هیت‌مپ در {output_path}...")
+    
+    # --- ✅ بخش اضافه شده برای حل مشکل فارسی ---
+    # 1. یک فونت فارسی را مشخص کنید (مطمئن شوید این فایل کنار اسکریپت شماست)
+    # اگر از فونت دیگری استفاده می‌کنید، نام فایل آن را اینجا قرار دهید.
+    font_path = 'Vazirmatn-Regular.ttf' 
+    try:
+        persian_font = FontProperties(fname=font_path)
+    except FileNotFoundError:
+        print(f"[WARNING] فونت در مسیر '{font_path}' یافت نشد. از فونت پیش‌فرض استفاده می‌شود.")
+        # در صورت نبود فونت، از فونت پیش‌فرض سیستم استفاده می‌شود که ممکن است فارسی را پشتیبانی نکند
+        persian_font = FontProperties()
+    # -----------------------------------------
+
     metric_columns = result_df.select_dtypes(include=np.number).columns.tolist()
     question_col = 'question' if 'question' in result_df.columns else None
     
+    # --- ✅ پردازش لیبل‌های محور y ---
+    if question_col:
+        original_labels = result_df[question_col].str.slice(0, 50)
+        # حروف فارسی را به هم چسبانده و راست‌چین می‌کنیم
+        reshaped_labels = [get_display(arabic_reshaper.reshape(label)) for label in original_labels]
+    else:
+        reshaped_labels = False
+    # --------------------------------
+
     plt.figure(figsize=(12, len(result_df) * 0.6))
-    sns.heatmap(
+    
+    ax = sns.heatmap(
         result_df[metric_columns].astype(float),
         annot=True, fmt=".2f", linewidths=.5, cmap="coolwarm",
-        yticklabels=result_df[question_col].str.slice(0, 50) if question_col else False
+        yticklabels=reshaped_labels  # <-- از لیبل‌های پردازش‌شده استفاده می‌کنیم
     )
-    plt.xticks(rotation=45, ha="right")
+    
+    # --- ✅ اعمال فونت فارسی به تمام متون نمودار ---
+    ax.set_title("RAG Evaluation Metrics Heatmap", fontproperties=persian_font)
+    plt.xticks(rotation=45, ha="right", fontproperties=persian_font)
     if question_col:
-        plt.yticks(rotation=0)
-    plt.title("RAG Evaluation Metrics Heatmap")
+        # برای تنظیمات محور y باید به این شکل عمل کرد
+        ax.set_yticklabels(ax.get_yticklabels(), fontproperties=persian_font, rotation=0, ha="right")
+
+    plt.xlabel("") # حذف لیبل محور x در صورت وجود
+    plt.ylabel("") # حذف لیبل محور y در صورت وجود
+    # ------------------------------------------------
+
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches='tight')
-    plt.close() # بستن نمودار برای جلوگیری از نمایش در محیط‌های غیرگرافیکی
-    print("[INFO] نمودار با موفقیت ذخیره شد.")
+    plt.close()
+    print("[INFO] نمودار با موفقیت و با پشتیبانی از زبان فارسی ذخیره شد.")
+
 
 
 import sys
