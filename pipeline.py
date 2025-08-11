@@ -133,33 +133,41 @@ class RAGServiceClient:
                 print(f"هشدار: پاک‌سازی VS با خطا مواجه شد. خطا: {e}")
 
 
-def run_evaluation(config: Dict[str, Any]):
-    # ... (این تابع تقریباً بدون تغییر باقی می‌ماند و فقط print های آن بهتر می‌شود) ...
+def run_evaluation(config: Dict[str, Any], status_updater=None): # اضافه کردن status_updater
     rag_client = RAGServiceClient(config)
     try:
-        df = pd.read_csv(config['qa_dataset_path'], delimiter=",")
+        if status_updater: status_updater("در حال خواندن فایل پرسش و پاسخ...")
+        df = pd.read_csv(config['qa_dataset_path'])
         if 'reference' in df.columns:
             df.rename(columns={'reference': 'ground_truth'}, inplace=True)
         original_df = df.copy()
         questions, ground_truths = df["question"].tolist(), df["ground_truth"].tolist()
-        print("[INFO] در حال تولید پاسخ‌ها از سرویس RAG...")
+        
+        if status_updater: status_updater("در حال تولید پاسخ‌ها از سرویس RAG...")
         answers, contexts = [], []
-        for q in questions:
+        total_questions = len(questions)
+        for i, q in enumerate(questions):
+            if status_updater: status_updater(f"در حال پردازش سوال {i+1}/{total_questions}...")
             response_json = rag_client.ask(q)
             answers.append(response_json['answer'])
             retrieved_contexts = [chunk['content'] for ref in response_json.get('references', []) for chunk in ref.get('chunks', [])]
             contexts.append(retrieved_contexts)
+        
         original_df["answer"], original_df["contexts"] = answers, contexts
         dataset = Dataset.from_pandas(original_df)
+        
         ragas_config = config['ragas']
         ragas_llm = LangchainLLMWrapper(CustomOllama(model=ragas_config['llm_model'], base_url=ragas_config['ollama_base_url'], timeout=600))
         ragas_embeddings = LangchainEmbeddingsWrapper(HuggingFaceEmbeddings(model_name=ragas_config['embedding_model']))
+        
         metrics = [ContextRelevance(llm=ragas_llm), ContextPrecision(llm=ragas_llm), Faithfulness(llm=ragas_llm), ContextRecall(llm=ragas_llm)]
-        print("[INFO] در حال شروع ارزیابی Ragas (فقط متریک‌های استاندارد)...")
+        
+        if status_updater: status_updater("در حال اجرای ارزیابی Ragas...")
         result = evaluate(dataset=dataset, metrics=metrics, embeddings=ragas_embeddings)
-        print("[INFO] ارزیابی Ragas به پایان رسید.")
+        
         ragas_scores_df = result.to_pandas()
         final_df = pd.concat([original_df.reset_index(drop=True), ragas_scores_df.reset_index(drop=True)], axis=1)
+        
         return final_df, ragas_embeddings
     finally:
         rag_client.cleanup()
@@ -269,10 +277,13 @@ def save_heatmap(result_df: pd.DataFrame, output_path: str):
     # --------------------------------
 
     plt.figure(figsize=(12, len(result_df) * 0.6))
-    
+    cmap = LinearSegmentedColormap.from_list(
+    "green_red", ["#E74C3C", "#2ECC71"] # Using hex codes for a nicer red/green
+    )
+
     ax = sns.heatmap(
         result_df[metric_columns].astype(float),
-        annot=True, fmt=".2f", linewidths=.5, cmap="coolwarm",
+        annot=True, fmt=".2f", linewidths=.5, cmap=cmap,
         yticklabels=reshaped_labels  # <-- از لیبل‌های پردازش‌شده استفاده می‌کنیم
     )
     
