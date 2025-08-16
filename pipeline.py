@@ -229,19 +229,17 @@ def calculate_overall_score(df: pd.DataFrame) -> tuple[float, pd.Series]:
     existing_key_metrics = [m for m in weights.keys() if m in df.columns]
     active_weights = {k: v for k, v in weights.items() if k in existing_key_metrics}
     
-    # محاسبه میانگین هر ستون متریک
     metric_averages = df[existing_key_metrics].mean(skipna=True)
     
-    # محاسبه میانگین وزنی
+
     weighted_sum = (metric_averages * pd.Series(active_weights)).sum()
     total_weight = sum(active_weights.values())
     
     if total_weight == 0:
-        return 0.0, pd.Series(dtype=float) # بازگشت یک سری خالی در صورت نبود متریک
+        return 0.0, pd.Series(dtype=float) 
         
     overall_score = weighted_sum / total_weight
     
-    # ✅ حالا هم امتیاز نهایی و هم سری میانگین‌ها را برمی‌گردانیم
     return overall_score, metric_averages
 
 
@@ -255,25 +253,19 @@ from matplotlib.font_manager import FontProperties
 def save_heatmap(result_df: pd.DataFrame, output_path: str):
     print(f"[INFO] در حال ذخیره نمودار هیت‌مپ در {output_path}...")
     
-    # --- ✅ بخش اضافه شده برای حل مشکل فارسی ---
-    # 1. یک فونت فارسی را مشخص کنید (مطمئن شوید این فایل کنار اسکریپت شماست)
-    # اگر از فونت دیگری استفاده می‌کنید، نام فایل آن را اینجا قرار دهید.
     font_path = 'Vazirmatn-Regular.ttf' 
     try:
         persian_font = FontProperties(fname=font_path)
     except FileNotFoundError:
         print(f"[WARNING] فونت در مسیر '{font_path}' یافت نشد. از فونت پیش‌فرض استفاده می‌شود.")
-        # در صورت نبود فونت، از فونت پیش‌فرض سیستم استفاده می‌شود که ممکن است فارسی را پشتیبانی نکند
         persian_font = FontProperties()
     # -----------------------------------------
 
     metric_columns = result_df.select_dtypes(include=np.number).columns.tolist()
     question_col = 'question' if 'question' in result_df.columns else None
     
-    # --- ✅ پردازش لیبل‌های محور y ---
     if question_col:
         original_labels = result_df[question_col].str.slice(0, 50)
-        # حروف فارسی را به هم چسبانده و راست‌چین می‌کنیم
         reshaped_labels = [get_display(arabic_reshaper.reshape(label)) for label in original_labels]
     else:
         reshaped_labels = False
@@ -281,24 +273,22 @@ def save_heatmap(result_df: pd.DataFrame, output_path: str):
 
     plt.figure(figsize=(12, len(result_df) * 0.6))
     cmap = LinearSegmentedColormap.from_list(
-    "green_red", ["#E74C3C", "#2ECC71"] # Using hex codes for a nicer red/green
+    "green_red", ["#E74C3C", "#2ECC71"] 
     )
 
     ax = sns.heatmap(
         result_df[metric_columns].astype(float),
         annot=True, fmt=".2f", linewidths=.5, cmap=cmap,
-        yticklabels=reshaped_labels  # <-- از لیبل‌های پردازش‌شده استفاده می‌کنیم
+        yticklabels=reshaped_labels 
     )
     
-    # --- ✅ اعمال فونت فارسی به تمام متون نمودار ---
     ax.set_title("RAG Evaluation Metrics Heatmap", fontproperties=persian_font)
     plt.xticks(rotation=45, ha="right", fontproperties=persian_font)
     if question_col:
-        # برای تنظیمات محور y باید به این شکل عمل کرد
         ax.set_yticklabels(ax.get_yticklabels(), fontproperties=persian_font, rotation=0, ha="right")
 
-    plt.xlabel("") # حذف لیبل محور x در صورت وجود
-    plt.ylabel("") # حذف لیبل محور y در صورت وجود
+    plt.xlabel("")
+    plt.ylabel("") 
     # ------------------------------------------------
 
     plt.tight_layout()
@@ -312,7 +302,6 @@ import sys
 def main():
     """تابع اصلی برای اجرای کل فرآیند ارزیابی."""
     try:
-        # ۱. بارگذاری تنظیمات و آماده‌سازی
         config = load_config()
         ci_config = config.get('ci_cd', {})
         artifacts_dir = ci_config.get('artifacts_dir', 'evaluation_artifacts')
@@ -323,7 +312,6 @@ def main():
         heatmap_path = os.path.join(artifacts_dir, "rag_evaluation_heatmap.png")
         summary_path = os.path.join(artifacts_dir, "evaluation_summary.csv") # ✅ مسیر فایل خلاصه
 
-        # ۲. اجرای ارزیابی و محاسبه متریک سفارشی
         df_ragas, embeddings = run_evaluation(config)
         print("[INFO] در حال محاسبه امتیاز Direct Answer Relevancy...")
         df_final = calculate_direct_relevancy(df_ragas, embeddings)
@@ -331,21 +319,16 @@ def main():
         print("\n--- نتایج نهایی ارزیابی ---")
         print(df_final)
 
-        # ۴. ذخیره نتایج کامل و نمودار
         df_final.to_csv(csv_path, index=False, encoding='utf-8-sig')
         print(f"\n[INFO] نتایج کامل با موفقیت در فایل '{csv_path}' ذخیره شد.")
         save_heatmap(df_final, heatmap_path)
 
-        # ... (کد مربوط به فایل بازبینی دستی بدون تغییر) ...
         
-        # ۵. محاسبه و نمایش امتیازات نهایی
         print("\n" + "="*50)
         print("[CI/CD] در حال بررسی نتایج برای قبولی...")
         
-        # ✅ دریافت همزمان امتیاز کلی و میانگین‌های جزئی
         overall_score, metric_averages = calculate_overall_score(df_final)
         
-        # ✅ چاپ میانگین هر متریک در ترمینال
         print("\n--- میانگین امتیازات متریک‌های کلیدی ---")
         if not metric_averages.empty:
             for metric_name, avg_score in metric_averages.items():
@@ -355,7 +338,6 @@ def main():
         print(f"[RESULT] امتیاز کلی محاسبه شده (وزنی): {overall_score:.4f}")
         print(f"[CONFIG] آستانه قبولی تنظیم شده: {pass_threshold:.4f}")
 
-        # ✅ ذخیره خلاصه امتیازات در فایل CSV
         try:
             summary_df = metric_averages.to_frame(name='Average Score')
             summary_df.loc['OVERALL_SCORE_WEIGHTED'] = overall_score
@@ -364,7 +346,6 @@ def main():
         except Exception as e:
             print(f"[WARNING] خطا در ذخیره فایل خلاصه امتیازات: {e}")
 
-        # ۶. بررسی وضعیت Pass/Fail
         if overall_score >= pass_threshold:
             print("\n[CI/CD CHECK PASSED] ✔️ امتیاز کلی بالاتر از آستانه است. بیلد موفقیت‌آمیز بود.")
             sys.exit(0)

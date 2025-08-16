@@ -16,7 +16,5 @@ ragas:
   ollama_base_url: "http://services.aiopt.io:11434"
 
 ci_cd:
-  # آستانه قبولی برای امتیاز کلی. اگر امتیاز از این مقدار کمتر باشد، فرایند Fail می‌شود.
-  pass_threshold: 0.75  # مثلا ۷۵ درصد
-  # پوشه‌ای که نتایج (CSV و نمودار) در آن ذخیره می‌شوند.
+  pass_threshold: 0.75  
   artifacts_dir: "evaluation_artifacts"

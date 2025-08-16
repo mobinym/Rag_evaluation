@@ -6,7 +6,7 @@ from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, B
 from typing import List, Dict, Any
 import numpy as np
 
-# ایمپورت کردن تمام منطق از فایل pipeline
+
 from pipeline import (
     load_config,
     run_evaluation,
@@ -14,20 +14,16 @@ from pipeline import (
     calculate_overall_score
 )
 
-# --- راه‌اندازی FastAPI ---
 app = FastAPI(
     title="RAG Evaluation Service",
     description="یک سرویس RESTful برای ارزیابی خودکار سیستم‌های RAG",
     version="1.0.0"
 )
 
-# یک حافظه موقت در RAM برای نگهداری وضعیت وظایف
-# در محیط پروداکشن، بهتر است از یک دیتابیس یا Redis استفاده شود.
+
 tasks_db: Dict[str, Dict[str, Any]] = {}
 
-# --- تابع اصلی که در پس‌زمینه اجرا می‌شود ---
 
-# این تابع را در فایل api.py با نسخه فعلی خود جایگزین کنید
 
 def run_evaluation_task(task_id: str, docs_data: List[tuple[str, bytes]], qa_file_data: bytes):
     """این تابع کل پایپ‌لاین ارزیابی را در پس‌زمینه اجرا می‌کند."""
@@ -59,19 +55,17 @@ def run_evaluation_task(task_id: str, docs_data: List[tuple[str, bytes]], qa_fil
             update_status("محاسبه امتیاز کلی...")
             overall_score, metric_averages = calculate_overall_score(df_final)
 
-            # ✅ اصلاح کلیدی: جایگزینی مقادیر NaN با None برای سازگاری با JSON
-            # json.dumps نمی‌تواند np.nan را پردازش کند، اما None را به null تبدیل می‌کند
+
             df_final_json_safe = df_final.replace({np.nan: None})
             
             summary_scores = metric_averages.to_dict()
             summary_scores['OVERALL_SCORE_WEIGHTED'] = overall_score
             
-            # پاکسازی مقادیر NaN از خلاصه امتیازات
+      
             cleaned_summary_scores = {}
             for key, value in summary_scores.items():
                 cleaned_summary_scores[key] = None if pd.isna(value) else value
             
-            # ذخیره نتیجه نهایی و پاکسازی شده
             tasks_db[task_id] = {
                 "status": "completed",
                 "result": {
@@ -88,7 +82,6 @@ def run_evaluation_task(task_id: str, docs_data: List[tuple[str, bytes]], qa_fil
             "traceback": traceback.format_exc()
         }
 
-# --- اندپوینت‌های API ---
 
 @app.post("/evaluate", status_code=202)
 async def start_evaluation_endpoint(
@@ -103,11 +96,9 @@ async def start_evaluation_endpoint(
     task_id = str(uuid.uuid4())
     tasks_db[task_id] = {"status": "pending"}
 
-    # خواندن محتوای فایل‌ها به صورت بایت
     docs_data = [(doc.filename, await doc.read()) for doc in documents]
     qa_file_data = await qa_file.read()
 
-    # افزودن وظیفه به صف پس‌زمینه
     background_tasks.add_task(run_evaluation_task, task_id, docs_data, qa_file_data)
     
     return {

@@ -41,12 +41,8 @@ with col1:
     
     start_button = st.button("🚀 Start Evaluation", type="primary", use_container_width=True)
 
-# Main section to display results
 with col2:
     st.header("📈 Evaluation Results")
-
-    # If button is clicked, start evaluation
-# این کد را جایگزین بخش if start_button در فایل dashboard.py کنید
 
     if start_button:
         if not uploaded_docs or not uploaded_qa_file:
@@ -82,13 +78,12 @@ with col2:
                         df_final = calculate_direct_relevancy(df_ragas, embeddings)
                         
                         update_status("محاسبه امتیاز کلی...")
-                        # ✅ اصلاح کلیدی: دریافت دو خروجی در دو متغیر جداگانه
+             
                         overall_score, metric_averages = calculate_overall_score(df_final)
-                        
-                        # ذخیره نتایج در وضعیت جلسه برای نمایش مجدد
+ 
                         st.session_state['results_df'] = df_final
                         st.session_state['overall_score'] = overall_score
-                        st.session_state['metric_averages'] = metric_averages # ✅ ذخیره میانگین‌های جزئی
+                        st.session_state['metric_averages'] = metric_averages 
                         st.session_state['threshold'] = threshold
                         
                         status_placeholder.empty()
@@ -99,7 +94,6 @@ with col2:
                         st.exception(e)
 
 
-    # این کد را جایگزین بخش if 'results_df' in st.session_state در فایل dashboard.py کنید
 
     if 'results_df' in st.session_state:
         results_df = st.session_state['results_df']
@@ -107,25 +101,24 @@ with col2:
         metric_averages = st.session_state['metric_averages']
         current_threshold = st.session_state['threshold']
 
-        # نمایش امتیاز کلی و وضعیت قبولی
+
         if score >= current_threshold:
             st.success(f"✔️ ارزیابی با موفقیت انجام شد (امتیاز کلی: {score:.2f})")
         else:
             st.error(f"❌ ارزیابی ناموفق بود (امتیاز کلی: {score:.2f} کمتر از آستانه {current_threshold:.2f})")
-        
-        # ستون‌بندی برای نمایش بهتر امتیازات
+
         score_col, avg_col = st.columns(2)
         
         with score_col:
             st.metric(label="امتیاز کلی (میانگین وزنی)", value=f"{score:.2%}")
             
         with avg_col:
-            # ✅ نمایش میانگین‌های جزئی
+
             st.subheader("میانگین امتیازات متریک‌ها")
             st.dataframe(metric_averages.to_frame(name='میانگین امتیاز'))
 
 
-        # ایجاد تب برای نمایش نتایج مختلف
+
         tab1, tab2, tab3 = st.tabs(["📊 نمودار هیت‌مپ", "📄 نتایج کامل", "✍️ بررسی دستی"])
 
         with tab1:
