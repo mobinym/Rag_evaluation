@@ -55,9 +55,9 @@ with col2:
 
     if start_button:
         if not uploaded_docs or not uploaded_qa_file:
-            st.warning("لطفاً هم فایل دانش و هم فایل پرسش و پاسخ را آپلود کنید.")
+            st.warning("Please upload both the knowledge file(s) and the Q&A file.")
         else:
-            with st.spinner("لطفاً صبر کنید، فرآیند ارزیابی در حال انجام است... این کار ممکن است چند دقیقه طول بکشد."):
+            with st.spinner("Please wait, the evaluation process is running... This may take a few minutes."):
                 with tempfile.TemporaryDirectory() as temp_dir:
                     docs_path = os.path.join(temp_dir, "docs")
                     os.makedirs(docs_path)
@@ -80,13 +80,13 @@ with col2:
                         status_placeholder.info(message)
 
                     try:
-                        update_status("شروع فرآیند ارزیابی...")
+                        update_status("Starting evaluation process...")
                         df_ragas, embeddings = run_evaluation(config, status_updater=update_status)
                         
-                        update_status("محاسبه امتیاز Direct Answer Relevancy...")
+                        update_status("Calculating Direct Answer Relevancy score...")
                         df_final = calculate_direct_relevancy(df_ragas, embeddings)
                         
-                        update_status("محاسبه امتیاز کلی...")
+                        update_status("Calculating overall score...")
              
                         overall_score, metric_averages = calculate_overall_score(df_final)
  
@@ -99,7 +99,7 @@ with col2:
                         st.rerun()
 
                     except Exception as e:
-                        st.error(f"یک خطای پیش‌بینی‌نشده رخ داد: {e}")
+                        st.error(f"An unexpected error occurred: {e}")
                         st.exception(e)
 
 
@@ -112,23 +112,21 @@ with col2:
 
 
         if score >= current_threshold:
-            st.success(f"✔️ ارزیابی با موفقیت انجام شد (امتیاز کلی: {score:.2f})")
+            st.success(f"✔️ Evaluation successful (Overall score: {score:.2f})")
         else:
-            st.error(f"❌ ارزیابی ناموفق بود (امتیاز کلی: {score:.2f} کمتر از آستانه {current_threshold:.2f})")
+            st.error(f"❌ Evaluation failed (Overall score: {score:.2f} is less than threshold {current_threshold:.2f})")
 
         score_col, avg_col = st.columns(2)
         
         with score_col:
-            st.metric(label="امتیاز کلی (میانگین وزنی)", value=f"{score:.2%}")
+            st.metric(label="Overall Score (Weighted Average)", value=f"{score:.2%}")
             
         with avg_col:
-
-            st.subheader("میانگین امتیازات متریک‌ها")
-            st.dataframe(metric_averages.to_frame(name='میانگین امتیاز'))
-
+            st.subheader("Average Metric Scores")
+            st.dataframe(metric_averages.to_frame(name='Average Score'))
 
 
-        tab1, tab2, tab3 = st.tabs(["📊 نمودار هیت‌مپ", "📄 نتایج کامل", "✍️ بررسی دستی"])
+        tab1, tab2, tab3 = st.tabs(["📊 Heatmap Chart", "📄 Full Results", "✍️ Manual Review"])
 
         with tab1:
             artifacts_dir = "evaluation_artifacts"
@@ -142,10 +140,10 @@ with col2:
 
         with tab3:
             comparison_df = results_df[['question', 'answer', 'ground_truth']].rename(columns={
-                'question': 'سوال پرسیده شده',
-                'answer': 'پاسخ RAG',
-                'ground_truth': 'پاسخ مورد انتظار'
+                'question': 'Asked Question',
+                'answer': 'RAG Answer',
+                'ground_truth': 'Expected Answer'
             })
             st.dataframe(comparison_df)
     else:
-        st.info("برای شروع، فایل‌های مورد نیاز را از منوی سمت راست آپلود کرده و روی دکمه «شروع ارزیابی» کلیک کنید.")
+        st.info("To start, please upload the required files from the right menu and click the 'Start Evaluation' button.")
