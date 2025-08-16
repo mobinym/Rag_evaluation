@@ -4,7 +4,7 @@ source_document_path: "./data"
 qa_dataset_path: "./data/qa.csv"
 
 server:
-  base_url: "http://localhost:8000"
+  base_url: "http://services.aiopt.io:10000"
   create_empty_vs_endpoint: "/v1/rag/vs/empty"
   add_document_endpoint: "/v1/rag/vs/{vs_id}/documents"
   ask_endpoint: "/v1/rag/vs/{vs_id}/chat"

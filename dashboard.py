@@ -46,77 +46,87 @@ with col2:
     st.header("📈 Evaluation Results")
 
     # If button is clicked, start evaluation
+# این کد را جایگزین بخش if start_button در فایل dashboard.py کنید
+
     if start_button:
         if not uploaded_docs or not uploaded_qa_file:
-            st.warning("Please upload both knowledge files and a Q&A file.")
+            st.warning("لطفاً هم فایل دانش و هم فایل پرسش و پاسخ را آپلود کنید.")
         else:
-            with st.spinner("Please wait, evaluation is in progress... This may take a few minutes."):
-                # Create a temporary folder to store uploaded files
+            with st.spinner("لطفاً صبر کنید، فرآیند ارزیابی در حال انجام است... این کار ممکن است چند دقیقه طول بکشد."):
                 with tempfile.TemporaryDirectory() as temp_dir:
                     docs_path = os.path.join(temp_dir, "docs")
                     os.makedirs(docs_path)
                     
-                    # Save knowledge files in the temporary folder
                     for doc in uploaded_docs:
                         with open(os.path.join(docs_path, doc.name), "wb") as f:
                             f.write(doc.getbuffer())
                             
-                    # Save Q&A file in the temporary folder
                     qa_path = os.path.join(temp_dir, "qa.csv")
                     with open(qa_path, "wb") as f:
                         f.write(uploaded_qa_file.getbuffer())
 
-                    # Load main config and update paths
                     config = load_config()
                     config['source_document_path'] = docs_path
                     config['qa_dataset_path'] = qa_path
                     config['ci_cd']['pass_threshold'] = threshold
                     
-                    # Placeholder for logs during execution
                     status_placeholder = st.empty()
                     def update_status(message):
                         status_placeholder.info(message)
 
                     try:
-                        # Run full pipeline
-                        update_status("Starting evaluation process...")
+                        update_status("شروع فرآیند ارزیابی...")
                         df_ragas, embeddings = run_evaluation(config, status_updater=update_status)
                         
-                        update_status("Calculating Direct Answer Relevancy score...")
+                        update_status("محاسبه امتیاز Direct Answer Relevancy...")
                         df_final = calculate_direct_relevancy(df_ragas, embeddings)
                         
-                        update_status("Calculating overall score...")
-                        overall_score = calculate_overall_score(df_final)
+                        update_status("محاسبه امتیاز کلی...")
+                        # ✅ اصلاح کلیدی: دریافت دو خروجی در دو متغیر جداگانه
+                        overall_score, metric_averages = calculate_overall_score(df_final)
                         
-                        # Save results in session state for later display
+                        # ذخیره نتایج در وضعیت جلسه برای نمایش مجدد
                         st.session_state['results_df'] = df_final
                         st.session_state['overall_score'] = overall_score
+                        st.session_state['metric_averages'] = metric_averages # ✅ ذخیره میانگین‌های جزئی
                         st.session_state['threshold'] = threshold
                         
-                        status_placeholder.empty()  # Clear final status message
-                        st.rerun()  # Rerun to display results
+                        status_placeholder.empty()
+                        st.rerun()
 
                     except Exception as e:
-                        st.error(f"An unexpected error occurred: {e}")
+                        st.error(f"یک خطای پیش‌بینی‌نشده رخ داد: {e}")
                         st.exception(e)
 
 
-    # If results exist in session, display them
+    # این کد را جایگزین بخش if 'results_df' in st.session_state در فایل dashboard.py کنید
+
     if 'results_df' in st.session_state:
         results_df = st.session_state['results_df']
         score = st.session_state['overall_score']
+        metric_averages = st.session_state['metric_averages']
         current_threshold = st.session_state['threshold']
 
-        # Display overall score and pass/fail status
+        # نمایش امتیاز کلی و وضعیت قبولی
         if score >= current_threshold:
-            st.success(f"✔️ Evaluation successful (Overall Score: {score:.2f})")
+            st.success(f"✔️ ارزیابی با موفقیت انجام شد (امتیاز کلی: {score:.2f})")
         else:
-            st.error(f"❌ Evaluation failed (Overall Score: {score:.2f} is less than threshold {current_threshold:.2f})")
+            st.error(f"❌ ارزیابی ناموفق بود (امتیاز کلی: {score:.2f} کمتر از آستانه {current_threshold:.2f})")
         
-        st.metric(label="Overall Score (Weighted Average)", value=f"{score:.2%}")
+        # ستون‌بندی برای نمایش بهتر امتیازات
+        score_col, avg_col = st.columns(2)
+        
+        with score_col:
+            st.metric(label="امتیاز کلی (میانگین وزنی)", value=f"{score:.2%}")
+            
+        with avg_col:
+            # ✅ نمایش میانگین‌های جزئی
+            st.subheader("میانگین امتیازات متریک‌ها")
+            st.dataframe(metric_averages.to_frame(name='میانگین امتیاز'))
 
-        # Create tabs for different results views
-        tab1, tab2, tab3 = st.tabs(["📊 Heatmap Chart", "📄 Full Results", "✍️ Manual Review"])
+
+        # ایجاد تب برای نمایش نتایج مختلف
+        tab1, tab2, tab3 = st.tabs(["📊 نمودار هیت‌مپ", "📄 نتایج کامل", "✍️ بررسی دستی"])
 
         with tab1:
             artifacts_dir = "evaluation_artifacts"
@@ -130,10 +140,10 @@ with col2:
 
         with tab3:
             comparison_df = results_df[['question', 'answer', 'ground_truth']].rename(columns={
-                'question': 'Asked Question',
-                'answer': 'RAG Answer',
-                'ground_truth': 'Expected Answer'
+                'question': 'سوال پرسیده شده',
+                'answer': 'پاسخ RAG',
+                'ground_truth': 'پاسخ مورد انتظار'
             })
             st.dataframe(comparison_df)
     else:
-        st.info("To get started, upload the required files from the left menu and click the 'Start Evaluation' button.")
+        st.info("برای شروع، فایل‌های مورد نیاز را از منوی سمت راست آپلود کرده و روی دکمه «شروع ارزیابی» کلیک کنید.")

@@ -212,23 +212,24 @@ def calculate_direct_relevancy(results_df: pd.DataFrame, embeddings: LangchainEm
 #     overall_score = metric_averages.mean()
     
 #     return overall_score
-def calculate_overall_score(df: pd.DataFrame) -> float:
-    """محاسبه یک امتیاز کلی بر اساس میانگین وزنی متریک‌های کلیدی."""
-    
-    # ✅ وزن‌ها را بر اساس اهمیت هر متریک برای خودتان تعریف کنید
+# این تابع را با نسخه فعلی خود جایگزین کنید
+
+def calculate_overall_score(df: pd.DataFrame) -> tuple[float, pd.Series]:
+    """
+    یک امتیاز کلی بر اساس میانگین وزنی محاسبه کرده و آن را به همراه
+    میانگین‌های هر یک از متریک‌های کلیدی برمی‌گرداند.
+    """
     weights = {
-        'faithfulness': 3.0,              # بیشترین اهمیت
-        'direct_answer_relevancy': 2.0,   # اهمیت بالا
-        'context_recall': 1.5,            # اهمیت متوسط
-        'context_precision': 1.0          # اهمیت عادی
+        'faithfulness': 3.0,
+        'direct_answer_relevancy': 2.0,
+        'context_recall': 1.5,
+        'context_precision': 1.0
     }
     
     existing_key_metrics = [m for m in weights.keys() if m in df.columns]
-    print(f"[INFO] متریک‌های کلیدی برای محاسبه امتیاز نهایی: {existing_key_metrics}")
-
-    # فقط وزن‌های متریک‌های موجود را در نظر بگیر
     active_weights = {k: v for k, v in weights.items() if k in existing_key_metrics}
     
+    # محاسبه میانگین هر ستون متریک
     metric_averages = df[existing_key_metrics].mean(skipna=True)
     
     # محاسبه میانگین وزنی
@@ -236,11 +237,13 @@ def calculate_overall_score(df: pd.DataFrame) -> float:
     total_weight = sum(active_weights.values())
     
     if total_weight == 0:
-        return 0.0
+        return 0.0, pd.Series(dtype=float) # بازگشت یک سری خالی در صورت نبود متریک
         
     overall_score = weighted_sum / total_weight
     
-    return overall_score
+    # ✅ حالا هم امتیاز نهایی و هم سری میانگین‌ها را برمی‌گردانیم
+    return overall_score, metric_averages
+
 
 from matplotlib.colors import LinearSegmentedColormap
 import seaborn as sns
@@ -318,58 +321,62 @@ def main():
         os.makedirs(artifacts_dir, exist_ok=True)
         csv_path = os.path.join(artifacts_dir, "rag_evaluation_results.csv")
         heatmap_path = os.path.join(artifacts_dir, "rag_evaluation_heatmap.png")
+        summary_path = os.path.join(artifacts_dir, "evaluation_summary.csv") # ✅ مسیر فایل خلاصه
 
-        # ۲. اجرای ارزیابی
+        # ۲. اجرای ارزیابی و محاسبه متریک سفارشی
         df_ragas, embeddings = run_evaluation(config)
-        
-        # ۳. محاسبه متریک سفارشی
         print("[INFO] در حال محاسبه امتیاز Direct Answer Relevancy...")
         df_final = calculate_direct_relevancy(df_ragas, embeddings)
         
         print("\n--- نتایج نهایی ارزیابی ---")
         print(df_final)
 
-        # ۴. ذخیره نتایج (آرتیفکت‌ها)
+        # ۴. ذخیره نتایج کامل و نمودار
         df_final.to_csv(csv_path, index=False, encoding='utf-8-sig')
         print(f"\n[INFO] نتایج کامل با موفقیت در فایل '{csv_path}' ذخیره شد.")
         save_heatmap(df_final, heatmap_path)
 
-        # --- بلوک ساخت فایل مقایسه دستی (با try...except مخصوص به خود) ---
-        try:
-            print("[INFO] در حال ایجاد فایل CSV برای بررسی دستی...")
-            comparison_df = df_final[['question', 'answer', 'ground_truth']]
-            comparison_df = comparison_df.rename(columns={
-                'question': 'سوال پرسیده شده',
-                'answer': 'پاسخ RAG',
-                'ground_truth': 'پاسخ مورد انتظار'
-            })
-            comparison_path = os.path.join(artifacts_dir, "manual_review.csv")
-            comparison_df.to_csv(comparison_path, index=False, encoding='utf-8-sig')
-            print(f"[INFO] فایل بررسی دستی با موفقیت در '{comparison_path}' ذخیره شد.")
-        except Exception as e:
-            # اگر در این بخش خطایی رخ دهد، فقط یک هشدار چاپ می‌کنیم و ادامه می‌دهیم
-            print(f"[WARNING] خطا در ایجاد فایل بررسی دستی: {e}")
-        # -----------------------------------------------------------------
-
-        # ✅ ۵. محاسبه امتیاز کلی و بررسی آستانه (حالا در جای درست قرار دارد)
+        # ... (کد مربوط به فایل بازبینی دستی بدون تغییر) ...
+        
+        # ۵. محاسبه و نمایش امتیازات نهایی
         print("\n" + "="*50)
         print("[CI/CD] در حال بررسی نتایج برای قبولی...")
-        overall_score = calculate_overall_score(df_final)
-        print(f"[RESULT] امتیاز کلی محاسبه شده: {overall_score:.4f}")
+        
+        # ✅ دریافت همزمان امتیاز کلی و میانگین‌های جزئی
+        overall_score, metric_averages = calculate_overall_score(df_final)
+        
+        # ✅ چاپ میانگین هر متریک در ترمینال
+        print("\n--- میانگین امتیازات متریک‌های کلیدی ---")
+        if not metric_averages.empty:
+            for metric_name, avg_score in metric_averages.items():
+                print(f"[RESULT] میانگین {metric_name:<25}: {avg_score:.4f}")
+        print("-----------------------------------------")
+        
+        print(f"[RESULT] امتیاز کلی محاسبه شده (وزنی): {overall_score:.4f}")
         print(f"[CONFIG] آستانه قبولی تنظیم شده: {pass_threshold:.4f}")
 
+        # ✅ ذخیره خلاصه امتیازات در فایل CSV
+        try:
+            summary_df = metric_averages.to_frame(name='Average Score')
+            summary_df.loc['OVERALL_SCORE_WEIGHTED'] = overall_score
+            summary_df.to_csv(summary_path, encoding='utf-8-sig')
+            print(f"[INFO] خلاصه امتیازات با موفقیت در '{summary_path}' ذخیره شد.")
+        except Exception as e:
+            print(f"[WARNING] خطا در ذخیره فایل خلاصه امتیازات: {e}")
+
+        # ۶. بررسی وضعیت Pass/Fail
         if overall_score >= pass_threshold:
             print("\n[CI/CD CHECK PASSED] ✔️ امتیاز کلی بالاتر از آستانه است. بیلد موفقیت‌آمیز بود.")
-            # sys.exit(0) # در اجرای دستی می‌توانید این خط را کامنت کنید تا برنامه بسته نشود
+            sys.exit(0)
         else:
             print(f"\n[CI/CD CHECK FAILED] ❌ امتیاز کلی ({overall_score:.4f}) پایین‌تر از آستانه ({pass_threshold:.4f}) است. بیلد ناموفق بود.")
-            sys.exit(1) # خروج با کد ۱ به معنی شکست
+            sys.exit(1)
 
     except Exception as e:
         print(f"\n[FATAL ERROR] یک خطای پیش‌بینی‌نشده در حین اجرای اسکریپت رخ داد: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1) # خروج با کد ۱ به معنی شکست
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

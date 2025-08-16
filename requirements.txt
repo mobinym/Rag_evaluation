@@ -1,15 +1,38 @@
-# rag_evaluation/requirements.txt
-ragas==0.1.21
-pandas
-datasets
-langchain-core
-langchain-community
-langchain-ollama
-# langchain-chroma
-langchain-huggingface
-sentence-transformers
-requests
-pyyaml
-seaborn
-matplotlib
-unstructured
+# Core Data & Utility Libraries
+pandas==2.3.1
+numpy==1.26.4
+PyYAML==6.0.2
+requests==2.32.4
+
+# RAG Evaluation Framework
+ragas==0.3.0
+datasets==4.0.0
+
+# LangChain Ecosystem
+langchain==0.2.17
+langchain-core==0.2.43
+langchain-community==0.2.19
+langchain-ollama==0.1.3
+langchain-huggingface==0.0.3
+langchain-text-splitters==0.2.4
+
+# Document Parsing
+unstructured==0.18.11
+
+# Foundational ML/DL Frameworks (for embedding models)
+torch==2.8.0
+transformers==4.55.0
+sentence-transformers==5.1.0
+
+# API Framework & Server
+fastapi==0.116.1
+uvicorn==0.35.0
+
+# Interactive Dashboard
+streamlit==1.48.0
+
+# Visualization and Farsi Language Support
+matplotlib==3.10.5
+seaborn==0.13.2
+arabic-reshaper==3.0.0
+python-bidi==0.6.6
