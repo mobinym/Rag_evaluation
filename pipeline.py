@@ -36,7 +36,6 @@ from ragas.embeddings.base import BaseRagasEmbeddings
 
 
 
-# این کلاس را در فایل pipeline.py با نسخه فعلی خود جایگزین کنید
 
 from langchain_core.embeddings import Embeddings
 import requests
@@ -54,16 +53,13 @@ class APICallEmbeddings(Embeddings):
     def _embed(self, texts: List[str]) -> List[List[float]]:
         """Helper function to call the API."""
         try:
-            # ❗️نکته: فرض بر این است که ورودی سرویس شما همچنان {"texts": [...]} است
-            response = requests.post(self.api_url, json={"texts": texts}, timeout=60) # اضافه کردن timeout
+            response = requests.post(self.api_url, json={"texts": texts}, timeout=60) 
             response.raise_for_status()
             data = response.json()
             
-            # ✅ اصلاح کلیدی: تغییر "embeddings" به "vectors"
             if "vectors" not in data or not isinstance(data["vectors"], list):
                 raise ValueError(f"API response is not in the expected format. Expected key 'vectors', but got keys: {data.keys()}")
             
-            # ✅ اصلاح کلیدی: تغییر "embeddings" به "vectors"
             return data["vectors"]
 
         except requests.RequestException as e:
@@ -183,7 +179,6 @@ class RAGServiceClient:
                 print(f"هشدار: پاک‌سازی VS با خطا مواجه شد. خطا: {e}")
 
 
-# این نسخه صحیح را جایگزین کل تابع run_evaluation خود کنید
 
 def run_evaluation(config: Dict[str, Any], status_updater=None):
     rag_client = RAGServiceClient(config)
@@ -219,12 +214,10 @@ def run_evaluation(config: Dict[str, Any], status_updater=None):
             )
         )
         
-        # ✅✅✅ اصلاح کلیدی: استفاده از کلاس APICallEmbeddings به جای HuggingFaceEmbeddings
         ragas_embeddings = LangchainEmbeddingsWrapper(
             APICallEmbeddings(api_url=embedding_service_config['api_url'])
         )
         
-        # تعریف متریک‌ها (همچنان بدون متریک سفارشی relevancy)
         metrics = [
             ContextRelevance(llm=ragas_llm), 
             ContextPrecision(llm=ragas_llm), 
@@ -264,7 +257,6 @@ def calculate_direct_relevancy(results_df: pd.DataFrame, embeddings: LangchainEm
     results_df["direct_answer_relevancy"] = scores
     return results_df
 
-# # ✅ تابع جدید برای محاسبه امتیاز کلی
 # def calculate_overall_score(df: pd.DataFrame) -> float:
 #     """محاسبه یک امتیاز کلی بر اساس میانگین متریک‌های کلیدی."""
 #     # ما متریک‌های کلیدی را اینجا تعریف می‌کنیم
