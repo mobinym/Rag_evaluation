@@ -20,9 +20,9 @@ langchain-text-splitters==0.2.4
 unstructured==0.18.11
 
 # Foundational ML/DL Frameworks (for embedding models)
-torch==2.8.0
-transformers==4.55.0
-sentence-transformers==5.1.0
+# torch==2.8.0
+# transformers==4.55.0
+# sentence-transformers==5.1.0
 
 # API Framework & Server
 fastapi==0.116.1

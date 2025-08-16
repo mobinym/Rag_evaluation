@@ -1,0 +1,18 @@
+# Python virtual environment
+venv/
+.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.vscode/
+.idea/
+.DS_Store
+
+evaluation_artifacts/
+
+.git/
+.gitignore
