@@ -18,7 +18,7 @@ from ragas.metrics import (
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
 
-from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import OllamaLLM
 # from langchain_community.document_loaders import DirectoryLoader
 # from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -32,6 +32,56 @@ import numpy as np
 from typing import List
 from ragas.embeddings.base import BaseRagasEmbeddings  
 
+
+
+
+
+# این کلاس را در فایل pipeline.py با نسخه فعلی خود جایگزین کنید
+
+from langchain_core.embeddings import Embeddings
+import requests
+from typing import List
+
+class APICallEmbeddings(Embeddings):
+    """
+    A custom embedding class that calls a remote API endpoint.
+    It expects the API to take a JSON with a 'texts' key and return
+    a JSON with a 'vectors' key.
+    """
+    def __init__(self, api_url: str):
+        self.api_url = api_url
+
+    def _embed(self, texts: List[str]) -> List[List[float]]:
+        """Helper function to call the API."""
+        try:
+            # ❗️نکته: فرض بر این است که ورودی سرویس شما همچنان {"texts": [...]} است
+            response = requests.post(self.api_url, json={"texts": texts}, timeout=60) # اضافه کردن timeout
+            response.raise_for_status()
+            data = response.json()
+            
+            # ✅ اصلاح کلیدی: تغییر "embeddings" به "vectors"
+            if "vectors" not in data or not isinstance(data["vectors"], list):
+                raise ValueError(f"API response is not in the expected format. Expected key 'vectors', but got keys: {data.keys()}")
+            
+            # ✅ اصلاح کلیدی: تغییر "embeddings" به "vectors"
+            return data["vectors"]
+
+        except requests.RequestException as e:
+            raise IOError(f"Failed to get a valid response from embedding API: {e}") from e
+        except ValueError as e:
+            raise ValueError(f"Could not parse embedding API response: {e}") from e
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed a list of documents by calling the API."""
+        if not texts:
+            return []
+        return self._embed(texts)
+
+    def embed_query(self, text: str) -> List[float]:
+        """Embed a single query by calling the API."""
+        result = self._embed([text])
+        return result[0] if result else []
+    
 class CustomOllama(OllamaLLM):
     """
     A custom Ollama LLM wrapper that removes the 'temperature' parameter 
@@ -133,7 +183,9 @@ class RAGServiceClient:
                 print(f"هشدار: پاک‌سازی VS با خطا مواجه شد. خطا: {e}")
 
 
-def run_evaluation(config: Dict[str, Any], status_updater=None): # اضافه کردن status_updater
+# این نسخه صحیح را جایگزین کل تابع run_evaluation خود کنید
+
+def run_evaluation(config: Dict[str, Any], status_updater=None):
     rag_client = RAGServiceClient(config)
     try:
         if status_updater: status_updater("در حال خواندن فایل پرسش و پاسخ...")
@@ -157,10 +209,28 @@ def run_evaluation(config: Dict[str, Any], status_updater=None): # اضافه ک
         dataset = Dataset.from_pandas(original_df)
         
         ragas_config = config['ragas']
-        ragas_llm = LangchainLLMWrapper(CustomOllama(model=ragas_config['llm_model'], base_url=ragas_config['ollama_base_url'], timeout=600))
-        ragas_embeddings = LangchainEmbeddingsWrapper(HuggingFaceEmbeddings(model_name=ragas_config['embedding_model']))
+        embedding_service_config = config['embedding_service'] # خواندن تنظیمات سرویس امبدینگ
         
-        metrics = [ContextRelevance(llm=ragas_llm), ContextPrecision(llm=ragas_llm), Faithfulness(llm=ragas_llm), ContextRecall(llm=ragas_llm)]
+        ragas_llm = LangchainLLMWrapper(
+            CustomOllama(
+                model=ragas_config['llm_model'],
+                base_url=ragas_config['ollama_base_url'],
+                timeout=600
+            )
+        )
+        
+        # ✅✅✅ اصلاح کلیدی: استفاده از کلاس APICallEmbeddings به جای HuggingFaceEmbeddings
+        ragas_embeddings = LangchainEmbeddingsWrapper(
+            APICallEmbeddings(api_url=embedding_service_config['api_url'])
+        )
+        
+        # تعریف متریک‌ها (همچنان بدون متریک سفارشی relevancy)
+        metrics = [
+            ContextRelevance(llm=ragas_llm), 
+            ContextPrecision(llm=ragas_llm), 
+            Faithfulness(llm=ragas_llm), 
+            ContextRecall(llm=ragas_llm)
+        ]
         
         if status_updater: status_updater("در حال اجرای ارزیابی Ragas...")
         result = evaluate(dataset=dataset, metrics=metrics, embeddings=ragas_embeddings)
@@ -171,7 +241,6 @@ def run_evaluation(config: Dict[str, Any], status_updater=None): # اضافه ک
         return final_df, ragas_embeddings
     finally:
         rag_client.cleanup()
-
 def calculate_direct_relevancy(results_df: pd.DataFrame, embeddings: LangchainEmbeddingsWrapper) -> pd.DataFrame:
     """محاسبه دستی امتیاز شباهت مستقیم سوال و پاسخ و اضافه کردن آن به دیتافریم نتایج."""
     questions = results_df["question"].tolist()

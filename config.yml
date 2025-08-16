@@ -18,3 +18,6 @@ ragas:
 ci_cd:
   pass_threshold: 0.75  
   artifacts_dir: "evaluation_artifacts"
+
+embedding_service:
+  api_url: "http://services.aiopt.io:5000/v1/emd/embed-text/"
